@@ -5,6 +5,10 @@ from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from modules.database_manager import DatabaseManager
+from migrat import migrate_database
+
+# Migration de la base de données au démarrage
+migrate_database()
 
 st.set_page_config(
     page_title="Elite Pronos 2",
