@@ -1,0 +1,864 @@
+================================================================================
+         GUIDE : SOLUTIONS DE SECOURS TEMPORAIRES
+                Elite Pronos 2 - Mode Manuel
+================================================================================
+
+📌 OBJECTIF
+-----------
+Fournir des solutions pour faire fonctionner Elite Pronos 2 sans hébergement
+cloud, en mode manuel ou semi-automatique, tant que ton PC n'est pas toujours
+allumé.
+
+
+================================================================================
+PARTIE 1 : COMPRENDRE LA SITUATION ACTUELLE
+================================================================================
+
+PROBLÈME PRINCIPAL
+------------------
+✅ L'application fonctionne parfaitement... quand ton PC est allumé
+❌ Mais si ton PC est éteint :
+   - Les joueurs ne peuvent pas se connecter
+   - Pas de sourcing automatique
+   - Pas de clôture automatique
+   - Pas de calcul des gains
+   - Pas d'envoi d'emails
+
+
+SOLUTIONS TEMPORAIRES
+---------------------
+Ce guide contient :
+1. Scripts de rattrapage (si tu rates une semaine)
+2. Interface admin améliorée (actions manuelles faciles)
+3. Système de sauvegarde automatique
+4. Plan de communication avec les joueurs
+5. Installation multi-PC (backup)
+
+
+================================================================================
+PARTIE 2 : SCRIPT DE RATTRAPAGE AUTOMATIQUE
+================================================================================
+
+OBJECTIF : Si tu oublies de faire une action, ce script fait tout d'un coup.
+
+FICHIER : rattrapage_semaine.py
+--------------------------------
+
+Crée ce fichier à la racine du projet :
+
+```python
+"""
+Script de rattrapage pour une semaine
+Exécute toutes les actions d'une semaine en une fois
+"""
+
+import sys
+from datetime import datetime
+
+from modules.sourcing_bot import SourcingBot
+from modules.calcul_trophees import CalculTrophees
+from modules.email_sender import EmailSender
+from modules.generateur_resume import GenerateurResume
+from modules.database_manager import DatabaseManager
+
+def rattraper_semaine(semaine):
+    """
+    Rattrape une semaine complète
+    """
+    print(f"\n{'='*70}")
+    print(f"🔧 RATTRAPAGE SEMAINE {semaine}")
+    print(f"{'='*70}\n")
+    
+    # Vérifier si la semaine existe
+    db = DatabaseManager()
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT statut FROM journees_calendrier WHERE semaine = ?
+    """, (semaine,))
+    
+    result = cursor.fetchone()
+    
+    if not result:
+        print(f"❌ Semaine {semaine} introuvable")
+        conn.close()
+        return
+    
+    statut = result[0]
+    conn.close()
+    
+    print(f"📊 Statut actuel : {statut}\n")
+    
+    # ÉTAPE 1 : Sourcing (si pas fait)
+    print("📊 ÉTAPE 1/5 : Sourcing")
+    print("-" * 70)
+    
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT sourcing_effectue FROM journees_calendrier WHERE semaine = ?
+    """, (semaine,))
+    sourcing_fait = cursor.fetchone()[0]
+    conn.close()
+    
+    if not sourcing_fait:
+        print("⚠️ Sourcing pas encore fait")
+        reponse = input("Lancer le sourcing ? (o/n) : ")
+        
+        if reponse.lower() == 'o':
+            try:
+                bot = SourcingBot()
+                bot.run(semaine=semaine)
+                
+                conn = db.create_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE journees_calendrier 
+                    SET sourcing_effectue = 1 
+                    WHERE semaine = ?
+                """, (semaine,))
+                conn.commit()
+                conn.close()
+                
+                print("✅ Sourcing effectué\n")
+            except Exception as e:
+                print(f"❌ Erreur sourcing : {e}\n")
+    else:
+        print("✅ Sourcing déjà fait\n")
+    
+    # ÉTAPE 2 : Clôture (si besoin)
+    print("🔒 ÉTAPE 2/5 : Clôture")
+    print("-" * 70)
+    
+    if statut == 'a_venir':
+        print("⚠️ Clôture pas encore faite")
+        reponse = input("Forcer la clôture ? (o/n) : ")
+        
+        if reponse.lower() == 'o':
+            try:
+                import subprocess
+                subprocess.run(["python", "modules/cloture_pronos.py", str(semaine)])
+                
+                conn = db.create_connection()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    UPDATE journees_calendrier 
+                    SET statut = 'en_cours' 
+                    WHERE semaine = ?
+                """, (semaine,))
+                conn.commit()
+                conn.close()
+                
+                print("✅ Clôture effectuée\n")
+            except Exception as e:
+                print(f"❌ Erreur clôture : {e}\n")
+    else:
+        print("✅ Clôture déjà faite\n")
+    
+    # ÉTAPE 3 : Mise à jour résultats
+    print("⚽ ÉTAPE 3/5 : Mise à jour des résultats")
+    print("-" * 70)
+    
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*) FROM matchs 
+        WHERE semaine = ? AND resultat IS NULL
+    """, (semaine,))
+    matchs_sans_resultat = cursor.fetchone()[0]
+    conn.close()
+    
+    if matchs_sans_resultat > 0:
+        print(f"⚠️ {matchs_sans_resultat} match(s) sans résultat")
+        reponse = input("Récupérer les résultats ? (o/n) : ")
+        
+        if reponse.lower() == 'o':
+            try:
+                bot = SourcingBot()
+                bot.update_results(semaine=semaine)
+                print("✅ Résultats mis à jour\n")
+            except Exception as e:
+                print(f"❌ Erreur résultats : {e}\n")
+    else:
+        print("✅ Tous les résultats sont enregistrés\n")
+    
+    # ÉTAPE 4 : Calcul trophées
+    print("🏆 ÉTAPE 4/5 : Calcul des trophées")
+    print("-" * 70)
+    
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT COUNT(*) FROM trophees WHERE semaine = ?
+    """, (semaine,))
+    trophees_existants = cursor.fetchone()[0]
+    conn.close()
+    
+    if trophees_existants > 0:
+        print(f"⚠️ {trophees_existants} trophée(s) déjà attribué(s)")
+        reponse = input("Recalculer les trophées ? (o/n) : ")
+        
+        if reponse.lower() == 'o':
+            # Supprimer les anciens
+            conn = db.create_connection()
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM trophees WHERE semaine = ?", (semaine,))
+            conn.commit()
+            conn.close()
+    else:
+        reponse = 'o'
+    
+    if reponse == 'o':
+        try:
+            calc = CalculTrophees(semaine)
+            calc.calculer_trophees()
+            print("✅ Trophées calculés\n")
+        except Exception as e:
+            print(f"❌ Erreur trophées : {e}\n")
+    
+    # ÉTAPE 5 : Envoi emails
+    print("📧 ÉTAPE 5/5 : Envoi des emails")
+    print("-" * 70)
+    
+    reponse = input("Envoyer les récaps par email ? (o/n) : ")
+    
+    if reponse.lower() == 'o':
+        try:
+            # Générer le résumé
+            gen = GenerateurResume(semaine)
+            resume = gen.generer_resume()
+            
+            # Envoyer les emails
+            sender = EmailSender()
+            sender.envoyer_recap_semaine(semaine)
+            
+            print("✅ Emails envoyés\n")
+        except Exception as e:
+            print(f"❌ Erreur emails : {e}\n")
+    
+    # Marquer comme terminée
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE journees_calendrier 
+        SET statut = 'terminee' 
+        WHERE semaine = ?
+    """, (semaine,))
+    conn.commit()
+    conn.close()
+    
+    print(f"\n{'='*70}")
+    print(f"✅ RATTRAPAGE SEMAINE {semaine} TERMINÉ")
+    print(f"{'='*70}\n")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python rattrapage_semaine.py [NUMERO_SEMAINE]")
+        print("Exemple: python rattrapage_semaine.py 18")
+        sys.exit(1)
+    
+    semaine = int(sys.argv[1])
+    rattraper_semaine(semaine)
+```
+
+
+UTILISATION
+-----------
+
+Quand tu veux rattraper une semaine :
+
+```bash
+python rattrapage_semaine.py 18
+```
+
+Le script te guide pas à pas et te demande confirmation avant chaque action.
+
+
+================================================================================
+PARTIE 3 : AMÉLIORATION DE L'INTERFACE ADMIN
+================================================================================
+
+On va améliorer l'interface admin pour qu'elle soit encore plus facile à
+utiliser en mode manuel.
+
+FICHIER : modules/interface_admin.py (AJOUTS)
+----------------------------------------------
+
+Ajoute cet onglet supplémentaire dans l'interface admin :
+
+
+1. Dans create_interface(), après l'onglet "Gestion Matchs", ajoute :
+
+```python
+# Onglet 4 : Actions Manuelles
+tab_actions = tk.Frame(notebook, bg=COULEUR_FOND)
+notebook.add(tab_actions, text="⚙️ Actions Manuelles")
+self.create_actions_manuelles(tab_actions)
+```
+
+
+2. Ajoute cette nouvelle méthode à la fin de la classe :
+
+```python
+def create_actions_manuelles(self, parent):
+    """
+    Onglet avec boutons pour lancer manuellement toutes les actions
+    """
+    canvas = tk.Canvas(parent, bg=COULEUR_FOND, highlightthickness=0)
+    canvas.pack(fill="both", expand=True, padx=30, pady=30)
+    
+    tk.Label(
+        canvas,
+        text="⚙️ ACTIONS MANUELLES",
+        font=("Arial", 18, "bold"),
+        fg=COULEUR_OR,
+        bg=COULEUR_FOND
+    ).pack(pady=20)
+    
+    # Sélection de semaine
+    semaine_frame = tk.Frame(canvas, bg=COULEUR_FOND)
+    semaine_frame.pack(pady=20)
+    
+    tk.Label(
+        semaine_frame,
+        text="Semaine :",
+        font=("Arial", 14),
+        fg=COULEUR_BLANC,
+        bg=COULEUR_FOND
+    ).pack(side="left", padx=10)
+    
+    self.actions_semaine_var = tk.StringVar(value="18")
+    semaine_spinbox = tk.Spinbox(
+        semaine_frame,
+        from_=1,
+        to=38,
+        textvariable=self.actions_semaine_var,
+        font=("Arial", 14),
+        width=5
+    )
+    semaine_spinbox.pack(side="left")
+    
+    # Boutons d'actions
+    actions = [
+        ("📊 SOURCING", self.action_sourcing, "#4ECDC4"),
+        ("🔒 CLÔTURE", self.action_cloture, "#FF6B6B"),
+        ("⚽ RÉSULTATS", self.action_resultats, "#95E77D"),
+        ("🏆 TROPHÉES", self.action_trophees, "#FFD700"),
+        ("📧 EMAILS", self.action_emails, "#FF69B4"),
+        ("🔧 RATTRAPAGE COMPLET", self.action_rattrapage, "#FF0000")
+    ]
+    
+    for texte, commande, couleur in actions:
+        btn = tk.Button(
+            canvas,
+            text=texte,
+            font=("Arial", 14, "bold"),
+            bg=couleur,
+            fg="black" if couleur != "#FF0000" else "white",
+            width=30,
+            height=2,
+            command=commande
+        )
+        btn.pack(pady=10)
+
+
+def action_sourcing(self):
+    semaine = int(self.actions_semaine_var.get())
+    if messagebox.askyesno("Sourcing", f"Lancer le sourcing pour la semaine {semaine} ?"):
+        try:
+            from modules.sourcing_bot import SourcingBot
+            bot = SourcingBot()
+            bot.run(semaine=semaine)
+            messagebox.showinfo("Succès", f"✅ Sourcing semaine {semaine} effectué")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"❌ {e}")
+
+
+def action_cloture(self):
+    semaine = int(self.actions_semaine_var.get())
+    if messagebox.askyesno("Clôture", f"Clôturer les pronos de la semaine {semaine} ?"):
+        try:
+            import subprocess
+            subprocess.run(["python", "modules/cloture_pronos.py", str(semaine)])
+            messagebox.showinfo("Succès", f"✅ Clôture semaine {semaine} effectuée")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"❌ {e}")
+
+
+def action_resultats(self):
+    semaine = int(self.actions_semaine_var.get())
+    if messagebox.askyesno("Résultats", f"Récupérer les résultats de la semaine {semaine} ?"):
+        try:
+            from modules.sourcing_bot import SourcingBot
+            bot = SourcingBot()
+            bot.update_results(semaine=semaine)
+            messagebox.showinfo("Succès", f"✅ Résultats semaine {semaine} mis à jour")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"❌ {e}")
+
+
+def action_trophees(self):
+    semaine = int(self.actions_semaine_var.get())
+    if messagebox.askyesno("Trophées", f"Calculer les trophées de la semaine {semaine} ?"):
+        try:
+            from modules.calcul_trophees import CalculTrophees
+            calc = CalculTrophees(semaine)
+            calc.calculer_trophees()
+            messagebox.showinfo("Succès", f"✅ Trophées semaine {semaine} calculés")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"❌ {e}")
+
+
+def action_emails(self):
+    semaine = int(self.actions_semaine_var.get())
+    if messagebox.askyesno("Emails", f"Envoyer les récaps de la semaine {semaine} ?"):
+        try:
+            from modules.email_sender import EmailSender
+            from modules.generateur_resume import GenerateurResume
+            
+            # Générer résumé
+            gen = GenerateurResume(semaine)
+            resume = gen.generer_resume()
+            
+            # Envoyer emails
+            sender = EmailSender()
+            sender.envoyer_recap_semaine(semaine)
+            
+            messagebox.showinfo("Succès", f"✅ Emails semaine {semaine} envoyés")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"❌ {e}")
+
+
+def action_rattrapage(self):
+    semaine = int(self.actions_semaine_var.get())
+    if messagebox.askyesno("Rattrapage", 
+        f"Rattraper TOUTES les actions de la semaine {semaine} ?\n\n"
+        "Cela va :\n"
+        "- Faire le sourcing\n"
+        "- Clôturer les pronos\n"
+        "- Récupérer les résultats\n"
+        "- Calculer les trophées\n"
+        "- Envoyer les emails"):
+        
+        try:
+            import subprocess
+            subprocess.run(["python", "rattrapage_semaine.py", str(semaine)])
+            messagebox.showinfo("Succès", f"✅ Rattrapage semaine {semaine} terminé")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"❌ {e}")
+```
+
+
+UTILISATION
+-----------
+
+Lance l'interface admin :
+```bash
+python modules/interface_admin.py
+```
+
+Va dans l'onglet "Actions Manuelles" et clique sur les boutons pour lancer
+les actions une par une, ou "Rattrapage complet" pour tout faire d'un coup.
+
+
+================================================================================
+PARTIE 4 : SYSTÈME DE SAUVEGARDE AUTOMATIQUE
+================================================================================
+
+OBJECTIF : Sauvegarder automatiquement la base de données régulièrement.
+
+FICHIER : sauvegarde_auto.py
+-----------------------------
+
+Crée ce fichier à la racine :
+
+```python
+"""
+Script de sauvegarde automatique
+Copie la base de données avec horodatage
+"""
+
+import shutil
+import os
+from datetime import datetime
+
+# Chemins
+DB_PATH = "database/pronos_expert.db"
+BACKUP_DIR = "backups"
+
+# Créer le dossier backups s'il n'existe pas
+if not os.path.exists(BACKUP_DIR):
+    os.makedirs(BACKUP_DIR)
+    print(f"✅ Dossier {BACKUP_DIR}/ créé")
+
+# Nom du fichier de backup avec date
+now = datetime.now()
+backup_name = f"pronos_expert_{now.strftime('%Y%m%d_%H%M%S')}.db"
+backup_path = os.path.join(BACKUP_DIR, backup_name)
+
+# Copier la base
+try:
+    shutil.copy2(DB_PATH, backup_path)
+    print(f"✅ Sauvegarde créée : {backup_path}")
+    
+    # Vérifier la taille
+    size = os.path.getsize(backup_path)
+    print(f"📊 Taille : {size / 1024:.2f} KB")
+    
+    # Compter le nombre de sauvegardes
+    backups = [f for f in os.listdir(BACKUP_DIR) if f.endswith('.db')]
+    print(f"📂 Total sauvegardes : {len(backups)}")
+    
+    # Nettoyer les anciennes sauvegardes (garder les 10 dernières)
+    if len(backups) > 10:
+        backups.sort()
+        to_delete = backups[:-10]
+        
+        for old_backup in to_delete:
+            old_path = os.path.join(BACKUP_DIR, old_backup)
+            os.remove(old_path)
+            print(f"🗑️ Ancienne sauvegarde supprimée : {old_backup}")
+
+except Exception as e:
+    print(f"❌ Erreur sauvegarde : {e}")
+```
+
+
+PLANIFICATION AUTOMATIQUE (Windows)
+------------------------------------
+
+Pour que la sauvegarde se fasse automatiquement tous les jours :
+
+1. Ouvre "Planificateur de tâches" Windows
+2. Actions → Créer une tâche
+3. Nom : "Sauvegarde Elite Pronos"
+4. Déclencheurs → Nouveau :
+   - Quotidien à 23h00
+5. Actions → Nouveau :
+   - Programme : C:\Users\lasal\AppData\Local\Python\pythoncore-3.14-64\python.exe
+   - Argument : C:\Users\lasal\OneDrive\elite_pronos_2\sauvegarde_auto.py
+   - Démarrer dans : C:\Users\lasal\OneDrive\elite_pronos_2
+6. OK
+
+
+UTILISATION MANUELLE
+---------------------
+
+```bash
+python sauvegarde_auto.py
+```
+
+
+================================================================================
+PARTIE 5 : PLAN DE COMMUNICATION AVEC LES JOUEURS
+================================================================================
+
+Si tu ne peux pas garantir que ton PC soit toujours allumé, il faut informer
+les joueurs des horaires d'accès.
+
+MODÈLE D'EMAIL À ENVOYER
+-------------------------
+
+Objet : 📅 Elite Pronos 2 - Horaires d'accès
+
+Salut les pronos !
+
+Petite info importante sur l'accès à l'application :
+
+🕐 HORAIRES D'ACCÈS :
+L'application est accessible quand mon PC est allumé.
+Généralement : [Tes horaires typiques, exemple : Lundi-Vendredi 18h-minuit, Week-end 10h-minuit]
+
+⚠️ CONSEILS :
+- Faites vos pronos dès que la journée est disponible
+- Ne pas attendre la dernière minute
+- En cas de problème, contactez-moi sur [Ton numéro/WhatsApp]
+
+🔜 ÉVOLUTION :
+Je travaille sur une solution d'hébergement cloud pour que l'app soit
+accessible 24h/24. En attendant, merci de votre compréhension !
+
+À vos pronos ! 🎮
+
+
+RAPPELS RÉGULIERS
+------------------
+
+Envoie un rappel chaque début de journée :
+
+"🎮 Journée 18 disponible !
+Clôture : [Date et heure]
+Faites vos pronos maintenant, l'app est accessible jusqu'à [heure] ce soir."
+
+
+================================================================================
+PARTIE 6 : INSTALLATION MULTI-PC (BACKUP)
+================================================================================
+
+Pour avoir un PC de secours en cas de panne :
+
+ÉTAPE 1 : PRÉPARER UN 2e PC
+----------------------------
+
+1. Installe Python 3.14 sur le 2e PC
+
+2. Copie tout le dossier elite_pronos_2/ depuis OneDrive
+
+3. Installe les packages :
+   ```bash
+   python -m pip install requests --break-system-packages
+   python -m pip install python-docx --break-system-packages
+   python -m pip install schedule --break-system-packages
+   ```
+
+4. Teste :
+   ```bash
+   python main.py
+   ```
+
+
+ÉTAPE 2 : SYNCHRONISATION
+--------------------------
+
+Comme ton projet est sur OneDrive :
+- ✅ Les modifications se synchronisent automatiquement
+- ✅ Tu as toujours la dernière version sur les 2 PC
+
+Attention : Ne lance jamais l'application sur les 2 PC en même temps !
+(Conflit sur la base de données)
+
+
+ÉTAPE 3 : PROCÉDURE DE BASCULEMENT
+-----------------------------------
+
+Si ton PC principal tombe en panne :
+
+1. Ouvre le 2e PC
+2. Attends que OneDrive se synchronise
+3. Lance l'application :
+   ```bash
+   python main.py
+   ```
+4. Continue normalement
+
+
+================================================================================
+PARTIE 7 : CHECKLIST HEBDOMADAIRE MANUELLE
+================================================================================
+
+Si tu gères manuellement, voici la checklist à suivre chaque semaine :
+
+LUNDI (7 jours avant les matchs)
+---------------------------------
+☐ Allumer le PC
+☐ Lancer : python modules/sync_calendrier.py afficher
+☐ Vérifier la prochaine journée
+☐ Lancer l'interface admin
+☐ Onglet "Actions Manuelles" → Sourcing
+☐ Vérifier que les 4 matchs sont bien enregistrés
+
+
+MARDI-JEUDI
+-----------
+☐ Vérifier que les joueurs font leurs pronos
+☐ Consulter modules/interface_admin.py pour voir qui a pronostiqué
+
+
+VENDREDI 19H30
+--------------
+☐ Allumer le PC impérativement
+☐ Lancer l'interface admin
+☐ Onglet "Actions Manuelles" → Clôture
+☐ Vérifier que tous les pronos sont validés
+
+
+DIMANCHE SOIR (après les matchs)
+---------------------------------
+☐ Allumer le PC
+☐ Lancer l'interface admin
+☐ Onglet "Actions Manuelles" :
+   ☐ Résultats
+   ☐ Trophées
+   ☐ Emails
+☐ OU utiliser "Rattrapage complet" pour tout faire d'un coup
+
+
+================================================================================
+PARTIE 8 : SCRIPT DE VÉRIFICATION RAPIDE
+================================================================================
+
+Pour vérifier rapidement l'état du système :
+
+FICHIER : verif_rapide.py
+--------------------------
+
+```python
+"""
+Vérification rapide de l'état du système
+"""
+
+from modules.database_manager import DatabaseManager
+from datetime import datetime
+
+db = DatabaseManager()
+conn = db.create_connection()
+cursor = conn.cursor()
+
+print("\n" + "="*70)
+print("🔍 VÉRIFICATION RAPIDE - ELITE PRONOS 2")
+print("="*70 + "\n")
+
+# Prochaine journée
+cursor.execute("""
+    SELECT semaine, date_premier_match, date_cloture_pronos, statut, sourcing_effectue
+    FROM journees_calendrier
+    WHERE statut IN ('a_venir', 'en_cours')
+    ORDER BY semaine
+    LIMIT 1
+""")
+
+journee = cursor.fetchone()
+
+if journee:
+    semaine, date_match, date_cloture, statut, sourcing = journee
+    
+    print(f"📅 PROCHAINE JOURNÉE : Semaine {semaine}")
+    print(f"   Statut : {statut}")
+    print(f"   1er match : {date_match}")
+    print(f"   Clôture : {date_cloture}")
+    print(f"   Sourcing : {'✅ Fait' if sourcing else '❌ À faire'}\n")
+    
+    # Nombre de pronos
+    cursor.execute("""
+        SELECT COUNT(DISTINCT utilisateur_id) 
+        FROM pronostics 
+        WHERE semaine = ?
+    """, (semaine,))
+    
+    nb_pronos = cursor.fetchone()[0]
+    
+    cursor.execute("SELECT COUNT(*) FROM utilisateurs WHERE statut = 'actif'")
+    nb_joueurs = cursor.fetchone()[0]
+    
+    print(f"👥 PRONOS : {nb_pronos}/{nb_joueurs} joueurs")
+    
+    if nb_pronos < nb_joueurs:
+        print("   ⚠️ Certains joueurs n'ont pas encore pronostiqué\n")
+    else:
+        print("   ✅ Tous les joueurs ont pronostiqué\n")
+
+else:
+    print("ℹ️ Aucune journée en cours\n")
+
+# Dernière semaine terminée
+cursor.execute("""
+    SELECT semaine FROM journees_calendrier
+    WHERE statut = 'terminee'
+    ORDER BY semaine DESC
+    LIMIT 1
+""")
+
+derniere = cursor.fetchone()
+
+if derniere:
+    print(f"🏆 DERNIÈRE SEMAINE TERMINÉE : Semaine {derniere[0]}\n")
+
+# Classement général
+cursor.execute("""
+    SELECT u.pseudo, SUM(h.points_totaux) as total
+    FROM historique h
+    JOIN utilisateurs u ON h.utilisateur_id = u.id
+    GROUP BY u.id
+    ORDER BY total DESC
+    LIMIT 3
+""")
+
+print("🥇 TOP 3 GÉNÉRAL :")
+medailles = ['🥇', '🥈', '🥉']
+for idx, (pseudo, points) in enumerate(cursor.fetchall()):
+    print(f"   {medailles[idx]} {pseudo} : {points:.1f} pts")
+
+print("\n" + "="*70 + "\n")
+
+conn.close()
+```
+
+
+UTILISATION
+-----------
+
+```bash
+python verif_rapide.py
+```
+
+Te donne un résumé instantané de l'état du système.
+
+
+================================================================================
+PARTIE 9 : TROUBLESHOOTING
+================================================================================
+
+PROBLÈME : J'ai oublié de faire le sourcing
+SOLUTION : python rattrapage_semaine.py [SEMAINE]
+
+
+PROBLÈME : J'ai oublié la clôture
+SOLUTION : Interface admin → Actions Manuelles → Clôture (ou rattrapage)
+
+
+PROBLÈME : Les matchs sont passés mais pas de calcul
+SOLUTION : Interface admin → Actions Manuelles → Résultats → Trophées → Emails
+
+
+PROBLÈME : Un joueur dit qu'il ne peut pas se connecter
+SOLUTION : Vérifie que ton PC est allumé et l'application lancée
+
+
+PROBLÈME : La base de données est corrompue
+SOLUTION : Restaure depuis backups/ (voir PARTIE 4)
+
+
+================================================================================
+PARTIE 10 : CHECKLIST COMPLÈTE
+================================================================================
+
+AVANT CHAQUE SEMAINE :
+☐ PC allumé
+☐ Vérification : python verif_rapide.py
+☐ Sourcing effectué
+☐ Email/message aux joueurs : "Journée X disponible !"
+
+PENDANT LA SEMAINE :
+☐ Vérifier régulièrement qui a pronostiqué
+☐ Relances si besoin
+
+JOUR DE CLÔTURE :
+☐ PC allumé impérativement à 19h30
+☐ Clôture à 20h précises
+☐ Vérifier que c'est bien fait
+
+APRÈS LES MATCHS :
+☐ PC allumé
+☐ Résultats récupérés
+☐ Trophées calculés
+☐ Emails envoyés
+
+MAINTENANCE :
+☐ Sauvegarde quotidienne
+☐ Vérifier les logs
+☐ Nettoyer les anciennes sauvegardes
+
+
+================================================================================
+FIN DU GUIDE - SOLUTIONS DE SECOURS TEMPORAIRES
+================================================================================
+
+Ces solutions te permettent de faire fonctionner l'application sans hébergement
+cloud, mais nécessitent ton implication régulière.
+
+Pour une vraie automatisation 24h/24, consulte :
+GUIDE_HEBERGEMENT_CLOUD.txt
+
+Bon courage avec ton application ! 🚀

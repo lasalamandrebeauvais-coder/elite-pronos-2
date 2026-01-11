@@ -1,0 +1,16 @@
+<<<<<<< HEAD
+1. Copie le dossier elite_pronos_2/
+2. Installe Python 3.14
+3. Installe les packages :
+   python -m pip install requests --break-system-packages
+   python -m pip install python-docx --break-system-packages
+   python -m pip install schedule --break-system-packages
+=======
+1. Copie le dossier elite_pronos_2/
+2. Installe Python 3.14
+3. Installe les packages :
+   python -m pip install requests --break-system-packages
+   python -m pip install python-docx --break-system-packages
+   python -m pip install schedule --break-system-packages
+>>>>>>> 59349ac3062ac7bdb8121e70c25a96bfbda2a9b8
+4. Lance : python main.py

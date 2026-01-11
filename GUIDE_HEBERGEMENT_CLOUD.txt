@@ -1,0 +1,712 @@
+================================================================================
+           GUIDE COMPLET : HÉBERGEMENT CLOUD PYTHONANYWHERE
+                        Elite Pronos 2
+================================================================================
+
+📌 OBJECTIF
+-----------
+Héberger l'application Elite Pronos 2 sur un serveur cloud qui tourne 24h/24
+pour que les joueurs puissent se connecter à tout moment, même quand ton PC
+est éteint.
+
+
+================================================================================
+PARTIE 1 : POURQUOI PYTHONANYWHERE ?
+================================================================================
+
+✅ AVANTAGES :
+- Gratuit jusqu'à un certain niveau (suffisant pour tester)
+- Formule payante à 5€/mois (très abordable)
+- Hébergement Python natif (parfait pour notre app)
+- Base de données incluse
+- Daemon peut tourner 24h/24
+- Interface web simple
+- Support par email
+
+❌ INCONVÉNIENTS :
+- Nécessite quelques adaptations du code
+- Configuration initiale (1-2h la première fois)
+
+
+================================================================================
+PARTIE 2 : INSCRIPTION ET CONFIGURATION COMPTE
+================================================================================
+
+ÉTAPE 1 : CRÉER UN COMPTE
+--------------------------
+1. Va sur : https://www.pythonanywhere.com
+2. Clic sur "Pricing & signup"
+3. Choisis :
+   - Formule GRATUITE pour tester (limites : 1 app web, pas de daemon 24h/24)
+   - Formule "Hacker" à 5€/mois (RECOMMANDÉ) : daemon 24h/24 inclus
+4. Crée ton compte avec email et mot de passe
+5. Confirme ton email
+
+
+ÉTAPE 2 : SE CONNECTER AU DASHBOARD
+------------------------------------
+1. Va sur : https://www.pythonanywhere.com/login
+2. Connecte-toi
+3. Tu arrives sur le Dashboard
+
+Le Dashboard contient :
+- Files : Gérer tes fichiers
+- Consoles : Terminal pour exécuter des commandes
+- Web : Configurer ton application web
+- Tasks : Tâches planifiées
+- Databases : Gérer ta base de données
+
+
+================================================================================
+PARTIE 3 : UPLOAD DE L'APPLICATION
+================================================================================
+
+MÉTHODE 1 : VIA INTERFACE WEB (Plus simple)
+--------------------------------------------
+
+1. Dans le Dashboard, clic sur "Files"
+
+2. Clique sur "Upload a file"
+
+3. Upload ces fichiers/dossiers :
+   - Tout le dossier modules/ (un par un ou zipper d'abord)
+   - database/pronos_expert.db
+   - main.py
+   - daemon_automation.py
+   - requirements.txt (à créer, voir ci-dessous)
+
+4. Crée un fichier requirements.txt dans Files :
+   
+   Contenu du fichier :
+   ```
+   requests==2.31.0
+   python-docx==1.1.0
+   schedule==1.2.2
+   Pillow==10.1.0
+   ```
+
+
+MÉTHODE 2 : VIA GIT (Avancé mais recommandé)
+---------------------------------------------
+
+1. Pousse ton projet sur GitHub
+
+2. Dans PythonAnywhere, ouvre une Console "Bash"
+
+3. Clone ton repo :
+   ```
+   git clone https://github.com/TON_USERNAME/elite_pronos_2.git
+   cd elite_pronos_2
+   ```
+
+4. Installe les dépendances :
+   ```
+   pip3 install --user -r requirements.txt
+   ```
+
+
+================================================================================
+PARTIE 4 : CONFIGURATION BASE DE DONNÉES
+================================================================================
+
+OPTION 1 : GARDER SQLite (Simple)
+----------------------------------
+Ta base de données actuelle (pronos_expert.db) fonctionne tel quel.
+
+Assure-toi juste que le chemin est correct dans config.py :
+```python
+DB_PATH = "/home/TON_USERNAME/elite_pronos_2/database/pronos_expert.db"
+```
+
+
+OPTION 2 : MySQL (Plus performant, recommandé long terme)
+----------------------------------------------------------
+
+1. Dans Dashboard → Databases
+2. Clic sur "Initialize" pour créer ta base MySQL
+3. Note les infos de connexion :
+   - Host : TON_USERNAME.mysql.pythonanywhere-services.com
+   - Database : TON_USERNAME$elitepronos
+   - Username : TON_USERNAME
+   - Password : [ton mot de passe choisi]
+
+4. Modifie database_manager.py pour utiliser MySQL :
+   
+   Ajoute en haut du fichier :
+   ```python
+   import mysql.connector
+   ```
+
+   Modifie create_connection() :
+   ```python
+   def create_connection(self):
+       try:
+           conn = mysql.connector.connect(
+               host='TON_USERNAME.mysql.pythonanywhere-services.com',
+               user='TON_USERNAME',
+               password='TON_MOT_DE_PASSE',
+               database='TON_USERNAME$elitepronos'
+           )
+           return conn
+       except Exception as e:
+           print(f"Erreur connexion : {e}")
+           return None
+   ```
+
+5. Importe ta base SQLite vers MySQL (via script ou manuellement)
+
+
+================================================================================
+PARTIE 5 : CONFIGURER L'APPLICATION WEB
+================================================================================
+
+ÉTAPE 1 : CRÉER UNE WEB APP
+----------------------------
+
+1. Dashboard → Web
+2. Clic "Add a new web app"
+3. Choisis ton domaine : TON_USERNAME.pythonanywhere.com
+4. Framework : "Manual configuration"
+5. Python version : Python 3.10 (ou 3.11)
+
+
+ÉTAPE 2 : CONFIGURER WSGI
+--------------------------
+
+1. Dans la page Web de ton app, trouve "Code" section
+2. Clic sur le lien WSGI configuration file
+3. Remplace tout le contenu par :
+
+```python
+import sys
+import os
+
+# Ajouter ton projet au path
+project_home = '/home/TON_USERNAME/elite_pronos_2'
+if project_home not in sys.path:
+    sys.path = [project_home] + sys.path
+
+# Importer ton application Flask
+from web_app import app as application
+
+# Alternative si tu utilises Tkinter (pas recommandé pour web)
+# Il faudra créer une version web de ton interface
+```
+
+NOTE IMPORTANTE : L'interface Tkinter actuelle ne fonctionne PAS sur le web.
+Il faut créer une interface web (Flask ou Django). Voir PARTIE 7.
+
+
+ÉTAPE 3 : RECHARGER L'APP
+--------------------------
+
+1. En haut de la page Web, clic sur le bouton vert "Reload TON_USERNAME.pythonanywhere.com"
+2. Ton app est maintenant accessible sur : https://TON_USERNAME.pythonanywhere.com
+
+
+================================================================================
+PARTIE 6 : CONFIGURER LE DAEMON (FORMULE PAYANTE UNIQUEMENT)
+================================================================================
+
+IMPORTANT : Le daemon 24h/24 nécessite la formule "Hacker" à 5€/mois minimum.
+
+ÉTAPE 1 : CRÉER UN FICHIER DE DAEMON
+-------------------------------------
+
+1. Crée un fichier daemon_runner.sh :
+
+```bash
+#!/bin/bash
+cd /home/TON_USERNAME/elite_pronos_2
+python3 daemon_automation.py
+```
+
+2. Rends-le exécutable :
+```bash
+chmod +x daemon_runner.sh
+```
+
+
+ÉTAPE 2 : CONFIGURER COMME PROCESSUS TOUJOURS ACTIF
+----------------------------------------------------
+
+1. Dashboard → Tasks
+2. Dans "Always-on tasks" (formule payante uniquement)
+3. Command : /home/TON_USERNAME/elite_pronos_2/daemon_runner.sh
+4. Clic "Create"
+
+Le daemon tournera maintenant en permanence et se relancera automatiquement
+s'il plante.
+
+
+ÉTAPE 3 : ALTERNATIVE SI FORMULE GRATUITE
+------------------------------------------
+
+Avec la formule gratuite, tu ne peux pas avoir de daemon 24h/24.
+Alternative : Utilise les "Scheduled tasks"
+
+1. Dashboard → Tasks
+2. Crée plusieurs tâches planifiées :
+
+   Vérification toutes les heures :
+   Command : /home/TON_USERNAME/elite_pronos_2/verifier_actions.py
+   Schedule : Hourly at :00
+
+3. Crée verifier_actions.py :
+```python
+from daemon_automation import DaemonAutomation
+
+daemon = DaemonAutomation()
+daemon.verifier_actions()
+```
+
+
+================================================================================
+PARTIE 7 : ADAPTER L'INTERFACE POUR LE WEB
+================================================================================
+
+PROBLÈME : Tkinter ne fonctionne pas sur un serveur web.
+
+SOLUTION : Créer une interface web avec Flask.
+
+ÉTAPE 1 : INSTALLER FLASK
+--------------------------
+
+Dans Console Bash :
+```bash
+pip3 install --user flask flask-login
+```
+
+
+ÉTAPE 2 : CRÉER web_app.py
+---------------------------
+
+Crée un nouveau fichier web_app.py à la racine :
+
+```python
+from flask import Flask, render_template, request, redirect, url_for, session
+from modules.database_manager import DatabaseManager
+
+app = Flask(__name__)
+app.secret_key = 'TON_SECRET_KEY_ALEATOIRE_ICI'
+
+@app.route('/')
+def index():
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        pseudo = request.form['pseudo']
+        password = request.form['password']
+        
+        db = DatabaseManager()
+        conn = db.create_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT id, pseudo, prenom FROM utilisateurs 
+            WHERE pseudo = ? AND mot_de_passe = ? AND statut = 'actif'
+        """, (pseudo, password))
+        
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user:
+            session['user_id'] = user[0]
+            session['pseudo'] = user[1]
+            session['prenom'] = user[2]
+            return redirect(url_for('dashboard'))
+        else:
+            return render_template('login.html', error="Identifiants incorrects")
+    
+    return render_template('login.html')
+
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    # Récupérer les infos du joueur
+    db = DatabaseManager()
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    
+    # Points totaux
+    cursor.execute("""
+        SELECT SUM(points_totaux) FROM historique 
+        WHERE utilisateur_id = ?
+    """, (session['user_id'],))
+    points_totaux = cursor.fetchone()[0] or 0
+    
+    # Classement
+    cursor.execute("""
+        SELECT COUNT(*) + 1 FROM (
+            SELECT SUM(points_totaux) as total 
+            FROM historique 
+            GROUP BY utilisateur_id 
+            HAVING total > ?
+        )
+    """, (points_totaux,))
+    classement = cursor.fetchone()[0]
+    
+    conn.close()
+    
+    return render_template('dashboard.html', 
+                         pseudo=session['pseudo'],
+                         points=points_totaux,
+                         classement=classement)
+
+@app.route('/pronos')
+def pronos():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    # Récupérer les matchs de la semaine actuelle
+    db = DatabaseManager()
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    
+    # Trouver la semaine en cours
+    cursor.execute("""
+        SELECT semaine FROM journees_calendrier 
+        WHERE statut = 'a_venir' 
+        ORDER BY semaine 
+        LIMIT 1
+    """)
+    semaine_row = cursor.fetchone()
+    
+    if not semaine_row:
+        return render_template('pronos.html', matchs=[], message="Aucune journée disponible")
+    
+    semaine = semaine_row[0]
+    
+    # Récupérer les matchs
+    cursor.execute("""
+        SELECT id, equipe_domicile, equipe_exterieur, cote_domicile, cote_nul, cote_exterieur
+        FROM matchs 
+        WHERE semaine = ?
+        ORDER BY id
+    """, (semaine,))
+    
+    matchs = cursor.fetchall()
+    conn.close()
+    
+    return render_template('pronos.html', matchs=matchs, semaine=semaine)
+
+@app.route('/sauvegarder_pronos', methods=['POST'])
+def sauvegarder_pronos():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    
+    semaine = request.form['semaine']
+    
+    db = DatabaseManager()
+    conn = db.create_connection()
+    cursor = conn.cursor()
+    
+    # Supprimer les anciens pronos
+    cursor.execute("""
+        DELETE FROM pronostics 
+        WHERE utilisateur_id = ? AND semaine = ?
+    """, (session['user_id'], semaine))
+    
+    # Enregistrer les nouveaux pronos
+    for key in request.form:
+        if key.startswith('prono_'):
+            match_id = int(key.split('_')[1])
+            prono = request.form[key]
+            
+            cursor.execute("""
+                INSERT INTO pronostics (utilisateur_id, match_id, semaine, pronostic)
+                VALUES (?, ?, ?, ?)
+            """, (session['user_id'], match_id, semaine, prono))
+    
+    conn.commit()
+    conn.close()
+    
+    return redirect(url_for('dashboard'))
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+
+ÉTAPE 3 : CRÉER LES TEMPLATES HTML
+-----------------------------------
+
+Crée un dossier templates/ à la racine.
+
+Dans templates/, crée :
+
+1. base.html :
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Elite Pronos 2</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #0A1628;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #FFD700;
+        }
+        .btn {
+            background-color: #FFD700;
+            color: black;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
+```
+
+2. login.html :
+```html
+{% extends "base.html" %}
+{% block content %}
+<h1>🎮 Elite Pronos 2 - Connexion</h1>
+{% if error %}
+<p style="color: red;">{{ error }}</p>
+{% endif %}
+<form method="POST">
+    <input type="text" name="pseudo" placeholder="Pseudo" required><br><br>
+    <input type="password" name="password" placeholder="Mot de passe" required><br><br>
+    <button type="submit" class="btn">Se connecter</button>
+</form>
+{% endblock %}
+```
+
+3. dashboard.html :
+```html
+{% extends "base.html" %}
+{% block content %}
+<h1>🏆 Dashboard - {{ pseudo }}</h1>
+<p>Points totaux : <strong>{{ points }}</strong></p>
+<p>Classement : <strong>#{{ classement }}</strong></p>
+<br>
+<a href="{{ url_for('pronos') }}" class="btn">📝 Faire mes pronos</a>
+<a href="{{ url_for('logout') }}" class="btn">🚪 Déconnexion</a>
+{% endblock %}
+```
+
+4. pronos.html :
+```html
+{% extends "base.html" %}
+{% block content %}
+<h1>📝 Pronos - Semaine {{ semaine }}</h1>
+{% if message %}
+<p>{{ message }}</p>
+{% else %}
+<form method="POST" action="{{ url_for('sauvegarder_pronos') }}">
+    <input type="hidden" name="semaine" value="{{ semaine }}">
+    {% for match in matchs %}
+    <div style="background: #1A1A1A; padding: 15px; margin: 10px 0; border-radius: 8px;">
+        <h3>{{ match[1] }} vs {{ match[2] }}</h3>
+        <label><input type="radio" name="prono_{{ match[0] }}" value="1" required> Domicile ({{ match[3] }})</label><br>
+        <label><input type="radio" name="prono_{{ match[0] }}" value="N"> Nul ({{ match[4] }})</label><br>
+        <label><input type="radio" name="prono_{{ match[0] }}" value="2"> Extérieur ({{ match[5] }})</label>
+    </div>
+    {% endfor %}
+    <br>
+    <button type="submit" class="btn">💾 Enregistrer mes pronos</button>
+</form>
+{% endif %}
+{% endblock %}
+```
+
+
+================================================================================
+PARTIE 8 : TESTS ET VALIDATION
+================================================================================
+
+ÉTAPE 1 : TESTER LOCALEMENT
+----------------------------
+
+Avant de déployer, teste sur ton PC :
+
+```bash
+cd elite_pronos_2
+python web_app.py
+```
+
+Ouvre http://localhost:5000 dans ton navigateur
+
+
+ÉTAPE 2 : DÉPLOYER SUR PYTHONANYWHERE
+--------------------------------------
+
+1. Upload web_app.py et le dossier templates/
+2. Configure le WSGI (voir PARTIE 5)
+3. Reload l'application
+4. Teste sur https://TON_USERNAME.pythonanywhere.com
+
+
+ÉTAPE 3 : VÉRIFIER LE DAEMON
+-----------------------------
+
+1. Dashboard → Consoles → Bash
+2. Vérifie les logs :
+   ```bash
+   tail -f /var/log/TON_USERNAME.pythonanywhere.com.error.log
+   ```
+
+
+================================================================================
+PARTIE 9 : MAINTENANCE ET MONITORING
+================================================================================
+
+SURVEILLANCE
+------------
+
+1. Vérifie régulièrement que le daemon tourne :
+   Dashboard → Tasks → Always-on tasks → Check status
+
+2. Consulte les logs d'erreur :
+   Dashboard → Web → Log files
+
+3. Teste l'accès web chaque semaine
+
+
+SAUVEGARDES
+-----------
+
+1. Dashboard → Files
+2. Download ta base de données régulièrement
+3. Garde une copie locale sur ton PC
+
+
+MISE À JOUR DU CODE
+--------------------
+
+Si tu modifies le code :
+
+1. Méthode Git (recommandé) :
+   ```bash
+   cd elite_pronos_2
+   git pull
+   ```
+
+2. Méthode manuelle :
+   - Upload les fichiers modifiés via Files
+   - Reload l'application Web
+
+
+================================================================================
+PARTIE 10 : DÉPANNAGE
+================================================================================
+
+PROBLÈME : "Import Error" dans les logs
+SOLUTION : Vérifie que tous les packages sont installés
+   pip3 install --user -r requirements.txt
+
+
+PROBLÈME : Le daemon ne démarre pas
+SOLUTION : Vérifie les logs, assure-toi d'avoir la formule payante
+
+
+PROBLÈME : Base de données locked
+SOLUTION : SQLite a des limites en concurrent. Passe à MySQL (voir PARTIE 4)
+
+
+PROBLÈME : L'app web ne répond pas
+SOLUTION : Reload l'app depuis le Dashboard → Web
+
+
+================================================================================
+PARTIE 11 : COÛTS ET FORMULES
+================================================================================
+
+FORMULE GRATUITE (Beginner)
+----------------------------
+- 1 application web
+- 512 MB storage
+- Pas de daemon 24h/24
+- Scheduled tasks limités
+
+Prix : GRATUIT
+
+
+FORMULE HACKER (Recommandée)
+-----------------------------
+- Tout de la formule gratuite +
+- Always-on tasks (daemon 24h/24) ✅
+- 1 GB storage
+- Plus de CPU time
+
+Prix : 5 USD/mois (≈ 5€/mois)
+
+
+FORMULE WEB DEV
+---------------
+- Tout de la formule Hacker +
+- 10 GB storage
+- Plus de scheduled tasks
+- Support prioritaire
+
+Prix : 12 USD/mois
+
+
+RECOMMANDATION : Commence avec Hacker (5€/mois), c'est largement suffisant.
+
+
+================================================================================
+PARTIE 12 : CHECKLIST FINALE
+================================================================================
+
+AVANT DE DÉPLOYER :
+☐ Compte PythonAnywhere créé (formule Hacker recommandée)
+☐ Code uploadé sur PythonAnywhere
+☐ requirements.txt créé et dépendances installées
+☐ Base de données uploadée ou migrée vers MySQL
+☐ web_app.py créé avec templates HTML
+☐ WSGI configuré
+☐ Application web testée
+☐ Daemon configuré (formule payante uniquement)
+☐ Email SMTP configuré dans config.py
+☐ Tests de connexion réussis
+
+APRÈS DÉPLOIEMENT :
+☐ Interface web accessible 24h/24
+☐ Joueurs peuvent se connecter
+☐ Pronos enregistrés correctement
+☐ Daemon tourne en permanence
+☐ Emails envoyés automatiquement
+☐ Sauvegardes régulières configurées
+
+
+================================================================================
+FIN DU GUIDE - HÉBERGEMENT CLOUD PYTHONANYWHERE
+================================================================================
+
+Si tu as des questions ou rencontres des problèmes, consulte :
+- Documentation PythonAnywhere : https://help.pythonanywhere.com
+- Forum PythonAnywhere : https://www.pythonanywhere.com/forums/
+- Support email : support@pythonanywhere.com
+
+Bonne chance avec ton déploiement ! 🚀
